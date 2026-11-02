@@ -4,7 +4,7 @@
 
 这是配合 X-AnyLabeling 使用的本地实验工作台，任务类型为旋转框 OBB。网页提供实验操作和结果可视化；旋转框的绘制与修改在 X-AnyLabeling 中完成。图片、标注、权重、预测和报告均保存在实验目录中，原有命令行入口也可继续使用。
 
-## 同门快速开始
+## 快速开始
 
 推荐 Windows 10/11、64 位 Python 3.11 或 3.12。基础工具支持 Python 3.10 及以上；有 NVIDIA GPU 可以加速训练，没有 GPU 也可以选择 CPU 验证流程。安装前确认 PowerShell 中 `python --version` 能显示版本。
 
