@@ -76,6 +76,8 @@ def test_command_uses_fixed_flags_without_shell_interpretation():
     args = command_args("extract", {"video": "D:/path/$()/video.mp4", "every": 1})
     assert args == ["extract", "--video=D:/path/$()/video.mp4", "--every=1"]
     assert command_args("train", {"name": "M0", "rounds": ["r1", "r2"], "dry_run": True})[-1] == "--dry-run"
+    assert command_args("import-yolo", {"source": "D:/dataset with spaces", "train_count": 200}) == [
+        "import-yolo", "--source=D:/dataset with spaces", "--train-count=200"]
     with pytest.raises(LabError):
         command_args("train", {"unknown": "x"})
     with pytest.raises(LabError):

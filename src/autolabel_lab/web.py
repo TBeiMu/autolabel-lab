@@ -76,6 +76,7 @@ def command_args(action, payload):
     fields = {
         "extract": {"video": "--video", "every": "--every", "start": "--start", "end": "--end", "max_frames": "--max-frames", "timestamps": "--timestamps"},
         "split": {"seed_count": "--seed-count", "val_fraction": "--val-fraction", "test_fraction": "--test-fraction", "gap_seconds": "--gap-seconds"},
+        "import-yolo": {"source": "--source", "train_count": "--train-count", "val_count": "--val-count", "pool_count": "--pool-count", "test_count": "--test-count"},
         "import-labels": {"subset": "--subset", "round": "--round", "source": "--from", "reviewed": "--reviewed"},
         "train": {"name": "--name", "rounds": "--rounds", "init": "--init", "from_model": "--from-model", "epochs": "--epochs", "imgsz": "--imgsz", "batch": "--batch", "device": "--device", "dry_run": "--dry-run"},
         "autolabel": {"round": "--round", "model": "--model", "count": "--count", "conf": "--conf", "device": "--device"},
@@ -407,6 +408,19 @@ class Handler(BaseHTTPRequestHandler):
                 root = ws.root / "experiments" / name
                 Project.create(root, body["classes"], seed=finite_number(body.get("seed", 42), "随机种子", True))
                 return self.send(ws.register(root, title=body.get("title") or name))
+            if path == "/api/create-yolo":
+                from .image_import import dataset_classes
+                if any(j["status"] in {"queued", "running", "cancelling", "recovering"} for j in ws.overview()["jobs"]):
+                    raise LabError("已有任务正在执行，请等它完成后再导入。")
+                counts = {key: finite_number(body.get(key, default), key, True)
+                          for key, default in [("train_count", 200), ("val_count", 50), ("pool_count", 200), ("test_count", 50)]}
+                if any(n < 1 for n in counts.values()):
+                    raise LabError("各分组图片数必须为正整数。")
+                name = safe_name(body["name"])
+                root = ws.root / "experiments" / name
+                Project.create(root, dataset_classes(body["source"]), seed=finite_number(body.get("seed", 42), "随机种子", True))
+                entry = ws.register(root, title=body.get("title") or name)
+                return self.send({**entry, "job": ws.start_job(entry["id"], "import-yolo", {"source": body["source"], **counts})})
             if path == "/api/register":
                 return self.send(ws.register(body["path"]))
             if path == "/api/job":

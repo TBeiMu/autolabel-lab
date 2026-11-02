@@ -117,7 +117,7 @@ def autolabel(project, name, model_name, count=25, frame_ids=None, conf=0.25, io
         existing = read_json(path)
         if existing["status"] in {"running", "predicted", "reviewed"}:
             used.update(existing["frame_ids"])
-    pool = sorted([f for f in project.frames("pool") if f["id"] not in used], key=lambda f: (f["source_sha256"], f["timestamp"]))
+    pool = sorted([f for f in project.frames("pool") if f["id"] not in used], key=lambda f: (f["source_sha256"], f["frame_index"]))
     if frame_ids:
         if len(set(frame_ids)) != len(frame_ids) or not set(frame_ids).issubset({f["id"] for f in pool}):
             raise LabError("指定图片必须是未分配的训练池图片；不能自动标注验证/测试集。")

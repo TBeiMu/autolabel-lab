@@ -132,6 +132,7 @@ def report(project, match_iou=0.5, unchanged_iou=0.95):
             absent = [c for c in project.config["classes"] if c not in present]
             if absent:
                 warnings.append(f"{role} 没有类别 {absent} 的人工目标，不能评价这些类别的效果。")
+    warnings.extend(project.config.get("import_warnings", []))
     synthetic = bool(project.config.get("synthetic_smoke_test", False))
     report_data = {"created_at": now(), "synthetic_smoke_test": synthetic, "classes": project.config["classes"], "split": project.manifest["split"],
                    "match_iou": match_iou, "unchanged_iou": unchanged_iou, "rounds": rounds, "models": models,

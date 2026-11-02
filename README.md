@@ -53,6 +53,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Trainin
 | 自动标注与审核 | 生成新轮次，打开 X-AnyLabeling 修正，逐图并排查看原始预测和审核框，导入审核结果、计时 |
 | 结果对比 | 在固定测试集评价多个模型，对比 P/R/mAP、误检和补漏、人工作时，下载 Markdown/CSV/JSON 报告 |
 
+### 已经有 YOLO OBB 图片和标注
+
+点击左侧 **「导入 YOLO 图片」**，选择包含 `data.yaml`、`images/train`、`images/val` 和对应 `labels` 的数据集根目录，填写独立实验名称。默认选择 200 张初始训练、50 张验证、200 张自动标注与审核、50 张固定测试图片。原数据保持不变，工作台复制选中图片，并将已有 TXT 转为 X-AnyLabeling JSON；类别自动读取并保留顺序。原 YAML 中其他机器的 `path` 不参与导入路径解析。
+
+导入使用固定随机种子，从原 val 选择验证图片，其他三组从原 train 无交集抽样；检查图片、四角标注、重复像素和类别覆盖。导入完成后可以直接到「模型训练」检查数据并训练 M0；再到「自动标注与审核」用 M0 预测 200 张训练池图片，逐图审核保存。审核池原有标签只保存在 `references/pool` 作参考，生成的审核目录从模型预测开始。已有标注的导入不会伪造人工审核记录或工时。
+
+同轮次审核完成后训练 M1，训练数据为 200 张初始图片加 200 张审核图片；固定的 50 张验证和 50 张测试始终不加入训练。抽样清单位于 `reports/selection.csv`，导入来源和类别统计位于 `source_import.json`。图片已打乱，相关动作/视频/视角可能跨子集，报告会说明这一评价边界。
+
+命令行也可以在已创建、类别一致的空实验中执行：
+
+```powershell
+& .\scripts\lab.ps1 --project experiments/demo import-yolo --source 'D:\YourDataset' --train-count 200 --val-count 50 --pool-count 200 --test-count 50
+```
+
 ### 第一次操作
 
 1. 点击「新建实验」，填写名称、目录标识和真实目标类别。目录标识用英文、数字或下划线；显示名称支持中文。新实验默认 YOLO26s-OBB，与原项目当前结构一致。

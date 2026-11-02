@@ -6,6 +6,7 @@ import sys
 
 from . import __version__
 from .dataset import extract, import_labels, split
+from .image_import import import_yolo
 from .models import autolabel, evaluate, train
 from .project import DEFAULT_MODEL_YAML, LabError, Project
 from .reports import record_time, report, status
@@ -46,6 +47,12 @@ def parser():
     cmd.add_argument("--val-fraction", type=float, default=0.15)
     cmd.add_argument("--test-fraction", type=float, default=0.2)
     cmd.add_argument("--gap-seconds", type=float, default=2.0)
+    cmd = sub.add_parser("import-yolo", help="导入已有 YOLO OBB 图片和 TXT 标注，固定训练/验证/审核/测试分组")
+    cmd.add_argument("--source", required=True)
+    cmd.add_argument("--train-count", type=int, default=200)
+    cmd.add_argument("--val-count", type=int, default=50)
+    cmd.add_argument("--pool-count", type=int, default=200)
+    cmd.add_argument("--test-count", type=int, default=50)
     cmd = sub.add_parser("import-labels", help="验证并归档 X-AnyLabeling JSON；整批完成后导入")
     target = cmd.add_mutually_exclusive_group(required=True)
     target.add_argument("--subset", choices=["seed", "val", "test"])
@@ -98,7 +105,7 @@ def main(argv=None):
             result = status(project)
         else:
             project = Project(root)
-            actions = {"extract": extract, "split": split, "import-labels": import_labels, "train": train,
+            actions = {"extract": extract, "split": split, "import-yolo": import_yolo, "import-labels": import_labels, "train": train,
                        "autolabel": autolabel, "evaluate": evaluate, "time": record_time, "report": report, "status": status}
             if command == "status":
                 result = status(project)
