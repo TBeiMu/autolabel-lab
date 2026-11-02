@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#153f3b">
+  <title>标注实验室 · AutoLabel Lab</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/" aria-label="标注实验室首页"><span class="brand-mark">⌗</span><span>标注实验室<small>AUTOLABEL LAB</small></span></a>
+    <div class="side-label">当前实验</div>
+    <select id="project-select" aria-label="选择实验"><option>尚未创建实验</option></select>
+    <button id="new-project" class="side-add">＋ 新建实验</button>
+    <nav id="nav" aria-label="实验流程">
+      <button data-page="overview" class="active"><span>◈</span>实验概览</button>
+      <button data-page="data"><span>▧</span>视频与数据</button>
+      <button data-page="label"><span>⌑</span>人工标注</button>
+      <button data-page="train"><span>↗</span>模型训练</button>
+      <button data-page="auto"><span>✧</span>自动标注与审核</button>
+      <button data-page="results"><span>▥</span>结果对比</button>
+    </nav>
+    <div class="sidebar-bottom"><span class="status-dot"></span>本地实验工作台<br><small id="runtime-label">正在连接环境…</small><button id="import-project" class="side-link">导入已有实验</button></div>
+  </aside>
+  <div class="main-shell">
+    <header class="topbar"><div class="breadcrumb">实验工作台 <span>/</span> <strong id="breadcrumb">实验概览</strong></div><div class="top-actions"><span class="local-badge">● 本机运行</span><button id="settings" class="quiet">⚙ 标注工具</button></div></header>
+    <main id="content" aria-live="polite"><div class="loading">正在加载实验工作台…</div></main>
+    <footer>AutoLabel Lab <span>从少量标注起步，记录每一轮改进。</span></footer>
+  </div>
+  <div id="job-dock" hidden></div>
+  <dialog id="dialog"><button class="dialog-close" id="dialog-close" aria-label="关闭">×</button><div id="dialog-content"></div></dialog>
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>
