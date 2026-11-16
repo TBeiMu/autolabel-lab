@@ -7,6 +7,33 @@ const WebAnnotator = (() => {
   const boxId = () => 'box-'+(++boxSequence);
   const dialog = () => document.getElementById('annotation-dialog');
   const el = id => document.getElementById(id);
+  const displayDefaults={backgroundOpacity:.35,fontSize:12,lineWidth:1.8,labelMode:'all'};
+  function readDisplay() {
+    let saved={};try{saved=JSON.parse(localStorage.getItem('alab-annotation-display'))||{}}catch{}
+    const result={...displayDefaults};
+    for(const [key,min,max] of [['backgroundOpacity',0,1],['fontSize',9,24],['lineWidth',1,5]]){
+      if(typeof saved[key]==='number'&&Number.isFinite(saved[key]))result[key]=Math.max(min,Math.min(max,saved[key]));
+    }
+    if(['all','selected','hidden'].includes(saved.labelMode))result.labelMode=saved.labelMode;
+    return result;
+  }
+  function displayControls() {
+    const d=E.display;return `<details class="ann-display"><summary>标注显示设置</summary><div class="ann-display-body">
+      <label for="ann-background">文字背景透明度 <output id="ann-background-value">${Math.round((1-d.backgroundOpacity)*100)}%</output></label>
+      <input id="ann-background" type="range" min="0" max="100" step="5" value="${Math.round((1-d.backgroundOpacity)*100)}">
+      <label for="ann-font-size">文字大小 <output id="ann-font-value">${d.fontSize}px</output></label><input id="ann-font-size" type="range" min="9" max="24" step="1" value="${d.fontSize}">
+      <label for="ann-line-width">框线粗细 <output id="ann-line-value">${d.lineWidth}px</output></label><input id="ann-line-width" type="range" min="1" max="5" step="0.2" value="${d.lineWidth}">
+      <label for="ann-label-mode">图片中的文字</label><select id="ann-label-mode">${[['all','显示全部'],['selected','只显示选中框'],['hidden','隐藏文字，保留框']].map(([v,t])=>`<option value="${v}" ${v===d.labelMode?'selected':''}>${t}</option>`).join('')}</select>
+      <p>文字保持不透明并描边。设置立即生效，自动记住；不改变标注数据。</p><button id="ann-display-reset" class="btn" type="button">恢复默认显示</button></div></details>`;
+  }
+  function updateDisplay() {
+    E.display.backgroundOpacity=1-Number(el('ann-background').value)/100;E.display.fontSize=Number(el('ann-font-size').value);
+    E.display.lineWidth=Number(el('ann-line-width').value);E.display.labelMode=el('ann-label-mode').value;
+    el('ann-background-value').textContent=el('ann-background').value+'%';el('ann-font-value').textContent=E.display.fontSize+'px';el('ann-line-value').textContent=E.display.lineWidth+'px';
+    try{localStorage.setItem('alab-annotation-display',JSON.stringify(E.display))}catch{}
+    draw();drawRaw();
+  }
+  function drawRaw(){if(E?.raw&&E.image)drawBoxes(el('ann-raw'),E.image,E.raw,{...E.display,hideLabels:E.display.labelMode!=='all'})}
   function corners(box) {
     if (box.original) return box.original;
     const c=Math.cos(box.angle),s=Math.sin(box.angle);
@@ -68,7 +95,7 @@ const WebAnnotator = (() => {
       ${E.round?'<label class="ann-toggle"><input id="ann-show-raw" type="checkbox" checked>对照原始预测</label>':''}</div>
       <div class="ann-layout"><div class="ann-images"><div class="ann-stage" id="ann-stage"><canvas id="ann-canvas" tabindex="0" aria-label="图片标注画布"></canvas></div>${E.round?'<div class="ann-raw" id="ann-raw-panel"><h3>原始预测 · 只读</h3><canvas id="ann-raw"></canvas></div>':''}</div>
       <aside class="ann-inspector"><label for="ann-class">框的类别 / 新框类别</label><select id="ann-class">${E.classes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select><div class="field"><label for="ann-angle">旋转角度（度）</label><input id="ann-angle" type="number" step="1"></div>
-      <div id="ann-bounds" class="ann-bounds" role="alert" hidden></div><div class="ann-boxes" id="ann-boxes"></div><p class="form-help">M 拖选多个框，V 选择后一起移动；Shift 点击增减选择。单个框可拖动四角和圆点调整。右侧拖动 ⠿ 调整序号，选中多个框时一起排序。滚轮缩放，空格拖动平移。</p><p class="form-help">选中框后 Ctrl+C 复制、Ctrl+V 粘贴；可粘到其他图片。C 复制上一张全部框。无目标图片也要保存；审核时保存表示已检查此张。</p>
+      ${displayControls()}<div id="ann-bounds" class="ann-bounds" role="alert" hidden></div><div class="ann-boxes" id="ann-boxes"></div><p class="form-help">M 拖选多个框，V 选择后一起移动；Shift 点击增减选择。单个框可拖动四角和圆点调整。右侧拖动 ⠿ 调整序号，选中多个框时一起排序。滚轮缩放，空格拖动平移。</p><p class="form-help">选中框后 Ctrl+C 复制、Ctrl+V 粘贴；可粘到其他图片。C 复制上一张全部框。无目标图片也要保存；审核时保存表示已检查此张。</p>
       <button class="btn" id="ann-reload">丢弃草稿并重新加载</button></aside></div>
       <div class="ann-footer"><div><strong id="ann-position"></strong><span id="ann-status" role="status"></span></div><div class="buttons"><button class="btn" id="ann-prev">← 上一张</button><button class="btn primary" id="ann-save">保存 Ctrl+S</button><button class="btn primary" id="ann-next">保存并下一张 →</button></div></div>`;
     el('ann-close').onclick=()=>action(close);
@@ -76,6 +103,8 @@ const WebAnnotator = (() => {
     el('ann-prev').onclick=()=>action(()=>navigate(-1));el('ann-next').onclick=()=>action(()=>navigate(1));
     el('ann-select').onclick=()=>mode('select');el('ann-draw').onclick=()=>mode('draw');
     el('ann-marquee').onclick=()=>mode('marquee');
+    for(const id of ['ann-background','ann-font-size','ann-line-width','ann-label-mode'])el(id).oninput=updateDisplay;
+    el('ann-display-reset').onclick=()=>{el('ann-background').value=65;el('ann-font-size').value=displayDefaults.fontSize;el('ann-line-width').value=displayDefaults.lineWidth;el('ann-label-mode').value='all';updateDisplay()};
     el('ann-copy').onclick=()=>action(copyPrevious);el('ann-delete').onclick=remove;
     el('ann-copy-box').onclick=copyBox;el('ann-paste-box').onclick=()=>action(pasteBox);
     el('ann-undo').onclick=()=>history('undo');el('ann-redo').onclick=()=>history('redo');
@@ -96,7 +125,7 @@ const WebAnnotator = (() => {
     if(!frames.length)throw new Error('此分组暂无图片。');
     const index=Math.max(0,frames.findIndex(f=>f.id===frameId));
     E={projectId:S.id,classes:[...S.details.config.classes],frames,round:roundName,subset:subset||frames[index].role,index,
-      label:S.details.config.classes[0],boxes:[],selected:-1,selection:new Set(),undo:[],redo:[],dirty:false,busy:true,mode:'select',space:false};
+      label:S.details.config.classes[0],boxes:[],selected:-1,selection:new Set(),undo:[],redo:[],dirty:false,busy:true,mode:'select',space:false,display:readDisplay()};
     mount();dialog().showModal();await load(index);el('ann-canvas').focus();
   }
   async function load(index,restore=true) {
@@ -113,7 +142,7 @@ const WebAnnotator = (() => {
       el('ann-title').textContent=(E.round?'审核 '+E.round:ROLE[E.subset])+' · '+frameCaption(E.frame)+(E.readOnly?' · 已归档，只读':'');
       el('ann-file').textContent=(E.frame.source_name||E.frame.file)+` · ${E.frame.width} × ${E.frame.height}`;
       el('ann-position').textContent=`${index+1} / ${E.frames.length}`;
-      if(E.raw)drawBoxes(el('ann-raw'),image,E.raw);
+      drawRaw();
       setBusy(false);fit();mode('select');
       message(restored?'已恢复未保存草稿；保存前会核验磁盘版本。':E.readOnly?'此标注已固定归档，只能查看。':data.reviewed?'此张已保存并确认，可继续调整。':data.saved?'已加载现有标注；请检查后保存。':'尚未标注，画框或保存空标注。');
     }catch(error){if(E&&generation===loadGeneration){setBusy(false);E.readOnly=true;E.image=null;renderList();message('加载失败，请重试：'+error.message,true)}throw error}
@@ -127,9 +156,9 @@ const WebAnnotator = (() => {
   function draw() {
     if(!E?.image)return;const ctx=el('ann-canvas').getContext('2d');ctx.setTransform(E.dpr,0,0,E.dpr,0,0);ctx.fillStyle='#152421';ctx.fillRect(0,0,...E.viewport);
     ctx.translate(...E.offset);ctx.scale(E.scale,E.scale);ctx.drawImage(E.image,0,0,E.frame.width,E.frame.height);
-    boxRows().forEach(({box,index,number,invalid})=>{const pts=corners(box),selected=E.selection.has(box.id),stroke=invalid?'#dc3f36':color(box);ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.strokeStyle=stroke;ctx.lineWidth=(invalid?4:selected?3:1.8)/E.scale;ctx.setLineDash(invalid?[7/E.scale,4/E.scale]:[]);ctx.stroke();ctx.setLineDash([]);
+    boxRows().forEach(({box,index,number,invalid})=>{const pts=corners(box),selected=E.selection.has(box.id),stroke=invalid?'#dc3f36':color(box);ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.strokeStyle=stroke;ctx.lineWidth=(invalid?Math.max(4,E.display.lineWidth):selected?Math.max(3,E.display.lineWidth):E.display.lineWidth)/E.scale;ctx.setLineDash(invalid?[7/E.scale,4/E.scale]:[]);ctx.stroke();ctx.setLineDash([]);
       if(selected){ctx.fillStyle=color(box);ctx.globalAlpha=.13;ctx.fill();ctx.globalAlpha=1}
-      ctx.font=`${12/E.scale}px Segoe UI,Microsoft YaHei`;ctx.fillStyle=stroke;const text=`${number}. ${box.label}${invalid?' · 越界':''}`;const x=Math.max(0,Math.min(pts[0][0],E.frame.width-(ctx.measureText(text).width+8/E.scale))),y=Math.max(16/E.scale,Math.min(pts[0][1],E.frame.height-2/E.scale));ctx.fillRect(x,y-17/E.scale,ctx.measureText(text).width+8/E.scale,19/E.scale);ctx.fillStyle='white';ctx.fillText(text,x+4/E.scale,y-3/E.scale);
+      if(E.display.labelMode==='all'||(E.display.labelMode==='selected'&&selected))drawAnnotationLabel(ctx,`${number}. ${box.label}${invalid?' · 越界':''}`,pts[0],stroke,E.frame.width,E.frame.height,{...E.display,scale:1/E.scale});
       if(selected&&E.selection.size===1&&!E.readOnly){ctx.fillStyle='white';for(const p of pts){ctx.fillRect(p[0]-5/E.scale,p[1]-5/E.scale,10/E.scale,10/E.scale);ctx.strokeRect(p[0]-5/E.scale,p[1]-5/E.scale,10/E.scale,10/E.scale)}const hp=handle(box);ctx.beginPath();ctx.moveTo(box.cx+Math.sin(box.angle)*box.h/2,box.cy-Math.cos(box.angle)*box.h/2);ctx.lineTo(...hp);ctx.stroke();ctx.beginPath();ctx.arc(...hp,6/E.scale,0,Math.PI*2);ctx.fill();ctx.stroke()}
     });
     if(['draw','marquee'].includes(E.gesture?.type)){const a=E.gesture.start,b=E.gesture.current;ctx.strokeStyle=E.gesture.type==='marquee'?'#79dfc1':'white';ctx.lineWidth=2/E.scale;ctx.setLineDash([6/E.scale,4/E.scale]);ctx.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);ctx.setLineDash([])}

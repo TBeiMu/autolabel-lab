@@ -63,6 +63,24 @@ s.serve_forever()
       await drag(await point(x,80),await point(x+60,130));
     }
     const row=page.locator('.ann-box');
+    await page.locator('.ann-display summary').click();
+    assert.equal(await page.locator('#ann-background').inputValue(),'65');
+    await page.selectOption('#ann-label-mode','selected');
+    assert.deepEqual(await page.evaluate(()=>window.drawnLabels),['3. target']);
+    await page.selectOption('#ann-label-mode','hidden');assert.deepEqual(await page.evaluate(()=>window.drawnLabels),[]);
+    await page.selectOption('#ann-label-mode','all');
+    assert.equal((await page.evaluate(()=>window.drawnLabels)).length,3);
+    await page.locator('#ann-background').fill('80');await page.locator('#ann-background').dispatchEvent('input');
+    await page.locator('#ann-font-size').fill('16');await page.locator('#ann-font-size').dispatchEvent('input');
+    await page.locator('#ann-line-width').fill('2.6');await page.locator('#ann-line-width').dispatchEvent('input');
+    assert.equal(await page.locator('#ann-background-value').innerText(),'80%');
+    const prefs=await page.evaluate(()=>JSON.parse(localStorage.getItem('alab-annotation-display')));
+    assert(Math.abs(prefs.backgroundOpacity-.2)<1e-9);assert.equal(prefs.fontSize,16);assert.equal(prefs.lineWidth,2.6);
+    const drawing=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=200;canvas.height=80;const ctx=canvas.getContext('2d'),calls=[];for(const method of ['fillRect','strokeText','fillText']){const original=ctx[method].bind(ctx);ctx[method]=(...args)=>{calls.push({method,alpha:ctx.globalAlpha,font:ctx.font});original(...args)}}drawAnnotationLabel(ctx,'Label',[10,40],'#28685e',200,80,{backgroundOpacity:.2,fontSize:16});return calls});
+    assert(Math.abs(drawing.find(c=>c.method==='fillRect').alpha-.2)<1e-6);
+    assert.equal(drawing.find(c=>c.method==='fillText').alpha,1);assert.equal(drawing.find(c=>c.method==='strokeText').alpha,1);
+    await page.locator('#ann-display-reset').click();assert.equal(await page.locator('#ann-font-size').inputValue(),'12');
+    checks.push('label transparency only affects background, outlined opaque text and selectable visibility');
     const initialIds=await row.evaluateAll(buttons=>buttons.map(button=>button.dataset.boxId));
     await page.locator('#ann-marquee').click();await drag(await point(50,70),await point(250,145));
     assert.equal(await page.locator('.ann-box.selected').count(),2);
@@ -118,6 +136,7 @@ s.serve_forever()
     assert(Math.abs(saved[1].points[0][1]-saved[0].points[0][1]-12)<.01);
     await page.locator('#ann-copy-box').click();await page.locator('#ann-next').click();
     await page.waitForFunction(()=>document.querySelector('#ann-position').textContent==='2 / 2');
+    assert.equal(await page.locator('#ann-background').inputValue(),'65');
     await page.locator('#ann-paste-box').click();assert.equal(await row.count(),1);
     await page.locator('#ann-save').click();await page.waitForFunction(()=>document.querySelector('#ann-status').textContent.includes('已保存'));
     const pasted=(await read('f1')).document.shapes[0];assert.equal(pasted.label,'other');
@@ -144,6 +163,11 @@ s.serve_forever()
     assert.equal(await page.locator('.ann-box.out-of-bounds').count(),2);
     assert.equal(await page.locator('.ann-check-box').count(),2);
     assert(await page.locator('#ann-bounds').isVisible());
+    await page.locator('.ann-display summary').click();await page.locator('#ann-background').fill('80');await page.locator('#ann-background').dispatchEvent('input');
+    await page.selectOption('#ann-label-mode','hidden');
+    const rawLabels=await page.evaluate(()=>{const canvas=document.querySelector('#ann-raw'),ctx=canvas.getContext('2d'),original=ctx.fillText.bind(ctx);let count=0;ctx.fillText=(...args)=>{count++;original(...args)};document.querySelector('#ann-background').dispatchEvent(new Event('input'));ctx.fillText=original;return count});
+    assert.equal(rawLabels,0);assert.equal(await page.locator('.ann-box.out-of-bounds').count(),2);
+    await page.selectOption('#ann-label-mode','all');
     const raw=(await read('f4','','r1')).raw;
     await page.locator('[data-check-box]').nth(1).click();
     assert.equal(await page.locator('.ann-box.selected').getAttribute('data-box'),'1');
@@ -161,7 +185,8 @@ s.serve_forever()
     const result=await read('f4','','r1');assert.deepEqual(result.raw,raw);assert.equal(result.document.shapes.length,1);
     await page.locator('#ann-copy-box').click();await page.locator('#ann-paste-box').click();
     for(const width of [1440,768,390]){await page.setViewportSize({width,height:1000});await page.waitForTimeout(100);assert(!(await page.evaluate(()=>document.querySelector('#annotation-dialog').scrollWidth>innerWidth+2)))}
-    await page.locator('#ann-close').click();checks.push('out-of-bounds load highlighting, off-image focus, save blocking, repair and raw preservation','responsive toolbar');
+    await page.locator('#ann-close').click();await page.reload();await page.waitForFunction(()=>typeof S!=='undefined'&&S.details);await page.locator('#nav [data-page=auto]').click();await page.locator('[data-annotate-round=r1]').click();await page.waitForFunction(()=>document.querySelector('#ann-position').textContent==='1 / 1');assert.equal(await page.locator('#ann-background').inputValue(),'80');
+    checks.push('out-of-bounds load highlighting, off-image focus, save blocking, repair and raw preservation','responsive toolbar and display settings persist after reload');
     assert.deepEqual(errors,[]);fs.writeFileSync(path.join(workspace,'verification.json'),JSON.stringify({checks,errors},null,2));console.log(JSON.stringify({workspace,checks,errors},null,2));
   }finally{if(browser)await browser.close();server.kill()}
 })().catch(error=>{console.error(error);process.exitCode=1});
