@@ -27,7 +27,7 @@ def timestamp_list(value):
 
 
 def parser():
-    p = argparse.ArgumentParser(description="视频抽帧 → X-AnyLabeling 人工标注 → 从零训练 → 自动标注 → 修正与对比")
+    p = argparse.ArgumentParser(description="视频抽帧 → 网页人工标注 → 从零训练 → 自动标注 → 修正与对比")
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("--project", required=True, help="实验数据目录，例如 experiments/demo")
     sub = p.add_subparsers(dest="command", required=True)
@@ -53,7 +53,7 @@ def parser():
     cmd.add_argument("--val-count", type=int, default=50)
     cmd.add_argument("--pool-count", type=int, default=200)
     cmd.add_argument("--test-count", type=int, default=50)
-    cmd = sub.add_parser("import-labels", help="验证并归档 X-AnyLabeling JSON；整批完成后导入")
+    cmd = sub.add_parser("import-labels", help="验证并归档 标注 JSON；整批完成后导入")
     target = cmd.add_mutually_exclusive_group(required=True)
     target.add_argument("--subset", choices=["seed", "val", "test"])
     target.add_argument("--round", dest="round_name")

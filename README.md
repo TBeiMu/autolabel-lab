@@ -1,8 +1,8 @@
 # 自动标注实验工具
 
-这个项目用于验证以下流程：**一段视频按需抽帧 → 十几张人工标注 → 从随机权重训练 M0 → 模型预标注新图片 → X-AnyLabeling 人工修正 → 训练 M1 → 比较标注工时和固定测试集指标**。
+这个项目用于验证以下流程：**一段视频按需抽帧 → 十几张人工标注 → 从随机权重训练 M0 → 模型预标注新图片 → 网页人工修正 → 训练 M1 → 比较标注工时和固定测试集指标**。
 
-这是配合 X-AnyLabeling 使用的本地实验工作台，任务类型为旋转框 OBB。网页提供实验操作和结果可视化；旋转框的绘制与修改在 X-AnyLabeling 中完成。图片、标注、权重、预测和报告均保存在实验目录中，原有命令行入口也可继续使用。
+这是支持网页标注的本地实验工作台，任务类型为旋转框 OBB。网页提供实验操作和结果可视化；旋转框的绘制与修改直接在网页中完成。图片、标注、权重、预测和报告均保存在实验目录中，原有命令行入口也可继续使用。
 
 ## 快速开始
 
@@ -18,13 +18,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Trainin
 
 没有 Git 时，点击仓库页面的 **Code → Download ZIP**，解压后在目录中打开 PowerShell，运行上面的 `setup.ps1 -Training` 命令。依赖安装到本目录的 `.venv`，首次安装训练依赖需要下载较大的文件。只想查看界面和测试数据流程时可以先不加 `-Training`；开始实际训练前再运行带 `-Training` 的安装命令。
 
-然后下载并安装 [X-AnyLabeling v4.3.0 Windows CPU](https://github.com/CVHub520/X-AnyLabeling/releases/tag/v4.3.0)，选择 `X-AnyLabeling-v4.3.0-Windows-CPU-Setup.exe`。双击本项目的 **`启动实验工作台.bat`**，在右上角「标注工具」选择安装后的 X-AnyLabeling 应用程序，接着按下方「第一次操作」完成实验。训练页面选择 GPU 0 前，先执行以下检查；返回 `False` 时选择 CPU，或按 [PyTorch 官方安装说明](https://pytorch.org/get-started/locally/) 为当前 GPU 安装匹配的 PyTorch：
+双击本项目的 **`启动实验工作台.bat`**，在「人工标注」进入网页编辑器，接着按下方「第一次操作」完成实验。训练页面选择 GPU 0 前，先执行以下检查；返回 `False` 时选择 CPU，或按 [PyTorch 官方安装说明](https://pytorch.org/get-started/locally/) 为当前 GPU 安装匹配的 PyTorch：
 
 ```powershell
 & .\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available())"
 ```
 
-仓库提供程序、测试和合成数据的界面截图。每个人使用自己的视频和类别新建实验；训练数据、标注、权重、日志和本机环境路径保存在本地。更详细的说明见 [新电脑使用指南](docs/getting-started.md) 和 [在 X-AnyLabeling 加载自定义模型](docs/custom-model.md)。
+仓库提供程序、测试和合成数据的界面截图。每个人使用自己的视频和类别新建实验；训练数据、标注、权重、日志和本机环境路径保存在本地。更详细的说明见 [新电脑使用指南](docs/getting-started.md) 和 [网页标注指南](docs/annotation.md)。
 
 ## 可视化工作台：双击启动
 
@@ -48,14 +48,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Trainin
 |---|---|
 | 实验概览 | 查看流程进度、数据组成、模型记录和训练曲线；进入下一步 |
 | 视频与数据 | 选择本地视频、预览指定秒数、设置抽帧范围和间隔、固定划分、查看图片大图 |
-| 人工标注 | 打开种子/验证/测试标注目录、查看 JSON 已保存数量、导入校验、记录种子标注工时 |
+| 人工标注 | 在网页画旋转框、调整类别、复制上一张、保存与归档、记录种子标注工时 |
 | 模型训练 | 设置 epochs、尺寸、batch、设备和审核轮次，检查数据，从零训练或从父模型继续；查看损失曲线和日志 |
-| 自动标注与审核 | 生成新轮次，打开 X-AnyLabeling 修正，逐图并排查看原始预测和审核框，导入审核结果、计时 |
+| 自动标注与审核 | 生成新轮次，进入网页编辑器修正，逐图并排查看原始预测和审核框，导入审核结果、计时 |
 | 结果对比 | 在固定测试集评价多个模型，对比 P/R/mAP、误检和补漏、人工作时，下载 Markdown/CSV/JSON 报告 |
 
 ### 已经有 YOLO OBB 图片和标注
 
-点击左侧 **「导入 YOLO 图片」**，选择包含 `data.yaml`、`images/train`、`images/val` 和对应 `labels` 的数据集根目录，填写独立实验名称。默认选择 200 张初始训练、50 张验证、200 张自动标注与审核、50 张固定测试图片。原数据保持不变，工作台复制选中图片，并将已有 TXT 转为 X-AnyLabeling JSON；类别自动读取并保留顺序。原 YAML 中其他机器的 `path` 不参与导入路径解析。
+点击左侧 **「导入 YOLO 图片」**，选择包含 `data.yaml`、`images/train`、`images/val` 和对应 `labels` 的数据集根目录，填写独立实验名称。默认选择 200 张初始训练、50 张验证、200 张自动标注与审核、50 张固定测试图片。原数据保持不变，工作台复制选中图片，并将已有 TXT 转为网页标注 JSON；类别自动读取并保留顺序。原 YAML 中其他机器的 `path` 不参与导入路径解析。
 
 导入使用固定随机种子，从原 val 选择验证图片，其他三组从原 train 无交集抽样；检查图片、四角标注、重复像素和类别覆盖。导入完成后可以直接到「模型训练」检查数据并训练 M0；再到「自动标注与审核」用 M0 预测 200 张训练池图片，逐图审核保存。审核池原有标签只保存在 `references/pool` 作参考，生成的审核目录从模型预测开始。已有标注的导入不会伪造人工审核记录或工时。
 
@@ -71,15 +71,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Trainin
 
 1. 点击「新建实验」，填写名称、目录标识和真实目标类别。目录标识用英文、数字或下划线；显示名称支持中文。新实验默认 YOLO26s-OBB，与原项目当前结构一致。
 2. 在「视频与数据」选择视频、预览画面并抽帧，然后固定划分。默认种子 15 张、验证 15%、测试 20%，边界隔离 2 秒。短视频可以调小隔离间隔或增加抽帧密度。
-3. 在「人工标注」分别打开三个标注目录。在 X-AnyLabeling 中画旋转框，将 JSON 保存到图片旁边，包括无目标图的空标注；回到网页分别点击「导入标注」。
+3. 在「人工标注」分别打开三个标注目录。点击「进入网页标注」绘制旋转框、保存每张图片（包括无目标图的空标注），再分别点击「导入标注」。
 4. 在「模型训练」先点击「检查训练数据」，查看任务日志中的计划；保持名称 M0，再点击「开始训练」。推荐先用较少 epochs 验证流程，正式对比时 M0/M1 使用相同训练设置。
 5. 在「自动标注与审核」用 M0 预测新图片，打开审核目录逐张修正。点击图片可并排查看两份框；左侧原始预测始终保留。完成全批审核后勾选确认并导入。
 6. 在「模型训练」创建 M1，勾选审核轮次 r1。默认仍从随机权重训练，以比较新增审核数据的帮助；需要持续训练时可选择父模型。
 7. 在「结果对比」选择模型进行测试集评价，再点击「更新实验报告」。填写审核工时和纯人工基线后，报告才会计算工时减少比例。
 
-右上角「标注工具」可保存本机 **X-AnyLabeling.exe** 路径。「启动标注工具」会启动程序并打开对应目录，在 X-AnyLabeling 内选择该图片目录。未设置程序时也可以用「打开标注目录」并手动启动你已有的 X-AnyLabeling。
+### 网页旋转框标注
 
-X-AnyLabeling 安装包请从 [官方 v4.3.0 发布页](https://github.com/CVHub520/X-AnyLabeling/releases/tag/v4.3.0) 单独下载，仓库不包含安装包。CPU 版用于人工旋转框标注，也能执行 ONNX 推理；本工作台的 GPU 训练与预标注不受影响。安装后在「标注工具」选择应用程序 `.exe`，不要选择 `Setup.exe`。已有本地安装包可继续使用。
+在「人工标注」选择种子、验证或测试分组，点击「进入网页标注」；在「自动标注与审核」选择轮次，点击「进入网页审核」。点击图片缩略图也可以进入对应编辑器。已归档标注以只读方式查看。
+
+- **画框与调整**：按 D 或点「画框」，拖动创建框；按 V 选择框，拖动内部移动、四角调整尺寸、上方圆点旋转。侧栏可以修改类别和角度，Delete 删除选中框，Ctrl+Z/Ctrl+Y 撤销与重做。
+- **保存与翻页**：Ctrl+S 保存；「保存并下一张」先保存当前图再翻页，上一张按钮也会先保存。没有目标时保存空标注。
+- **上一张框**：按 C 或点「复制上一张框」，从上一张已保存的标注追加框，尺寸不同会按图片比例映射。按当前画面检查、调整后保存；不会自动覆盖当前预测。
+- **放大与平移**：滚轮缩放，按空格拖动画面，「适应窗口」复位。审核可以显示原始预测对照。
+- **草稿与归档**：未保存修改暂存在当前浏览器，刷新后可恢复。保存失败不清空草稿，多页面修改同一图会阻止覆盖并要求重新加载。网页审核开始后，每张图片都需保存确认，才允许整轮导入。
+
+模型预测仍由本地 `.pt` 权重执行，无需导出 ONNX。详细操作见 [网页标注指南](docs/annotation.md)。
 
 ### 任务与结果保存
 
@@ -98,7 +106,7 @@ X-AnyLabeling 安装包请从 [官方 v4.3.0 发布页](https://github.com/CVHub
 
 在 PowerShell 中进入本项目目录，执行 `scripts/lab.ps1`。默认使用安装步骤创建的 `.venv`；如需复用已有 Python 环境，可按 [新电脑使用指南](docs/getting-started.md) 设置 `ALAB_PYTHON` 或创建本机 `runtime.local.json`。
 
-运行顺序示例见下面。**把 `object_a,object_b` 替换为真实类别，把视频路径替换为你的视频。** 类别顺序在创建实验后固定，X-AnyLabeling 中的名称必须完全一致。
+运行顺序示例见下面。**把 `object_a,object_b` 替换为真实类别，把视频路径替换为你的视频。** 类别顺序在创建实验后固定，网页编辑器使用同一类别清单。
 
 ```powershell
 & .\scripts\lab.ps1 --project experiments/demo init --classes 'object_a,object_b'
@@ -122,7 +130,7 @@ X-AnyLabeling 安装包请从 [官方 v4.3.0 发布页](https://github.com/CVHub
 
 `split` 对每个视频按时间先后划出训练池、验证段、测试段，默认验证比例 15%、测试比例 20%，再从训练池中均匀选出 15 张种子图片。训练/验证与验证/测试边界各留出时间隔离带；带内图片标记为 `gap`，不参与实验。
 
-打开 X-AnyLabeling，分别打开以下图片目录，使用**旋转框**标注并将 JSON 保存到图片旁边：
+在网页「人工标注」分别进入以下分组，使用**旋转框**标注并保存。标注 JSON 的本地目录如下：
 
 | 目录 | 用途 |
 |---|---|
@@ -130,7 +138,7 @@ X-AnyLabeling 安装包请从 [官方 v4.3.0 发布页](https://github.com/CVHub
 | `experiments/demo/workspaces/val` | 选取每轮 best.pt 的固定验证集 |
 | `experiments/demo/workspaces/test` | M0、M1 共同使用的固定人工测试集 |
 
-每张图片都需要保存对应 JSON，包括无目标图片的空 `shapes`。未生成 JSON 的图片表示“还没标”，不会自动当成负样本。`classes.txt` 提供名称清单，需要在 X-AnyLabeling 中按这些名称设置标签；它不是自动读取配置的承诺。
+每张图片都需要保存对应 JSON，包括无目标图片的空 `shapes`。未生成 JSON 的图片表示“还没标”，不会自动当成负样本。网页编辑器自动读取实验类别；`classes.txt` 另提供名称清单。
 
 ```powershell
 & .\scripts\lab.ps1 --project experiments/demo import-labels --subset seed
@@ -170,10 +178,10 @@ GPU 使用 `--device 0`，没有 GPU 用 `--device cpu`。第一轮十几张可�
 从尚未使用的训练池选 25 张。每轮保存：
 
 - `rounds/r1/raw/*.json`：带置信度的原始预测，冻结并校验哈希。
-- `rounds/r1/editable/`：图片和可编辑的 X-AnyLabeling JSON。
+- `rounds/r1/editable/`：图片和可编辑的标注 JSON。
 - `rounds/r1/round.json`：模型、图片清单、阈值、输入尺寸和机器耗时。
 
-在 X-AnyLabeling 中打开 `editable`，先观察这一轮预测，再逐张删除误检、补漏、改类别、调整旋转框。**没有任何预测的图片也必须审核。** 不要编辑 `raw`。预测角点可能越过图片边界，需在人工修正时处理后才能导入。
+在网页中点击「进入网页审核」编辑 `editable` 对应的标注，先观察这一轮预测，再逐张删除误检、补漏、改类别、调整旋转框。**没有任何预测的图片也必须审核。** 不要编辑 `raw`。预测角点可能越过图片边界，需在人工修正时处理后才能导入。
 
 ```powershell
 & .\scripts\lab.ps1 --project experiments/demo import-labels --round r1 --reviewed
@@ -214,7 +222,7 @@ GPU 使用 `--device 0`，没有 GPU 用 `--device cpu`。第一轮十几张可�
 2. **标注是否节省人工**：记录纯人工基线和审核修正的实测工时。只有同轮图片都有完整的两组工时记录才计算减少比例；不填基线就显示“不能计算”。可以用 `time --stage manual --round r1 --seconds ...` 录入已测纯人工基线。推荐另一位标注人或交叉顺序控制熟练度、记忆偏差，不要根据预测效果猜耗时。
 3. **新增训练数据是否有效**：M0/M1 在同一份固定测试集上的 P、R、mAP50、mAP50–95；机器训练和预测耗时单独保存。测试评价阈值固定，不提供用测试集调阈值的流程。
 
-种子标注工时已单独记录；训练准备、调试、审核工具切换等额外人工成本，可按实际情况另记，不把机器训练耗时当作人工作时。
+种子标注工时已单独记录；训练准备、调试、标注检查等额外人工成本，可按实际情况另记，不把机器训练耗时当作人工作时。
 
 本实验只能回答当前视频和划分下的问题。相同视频内的时间段隔离比随机相邻帧划分更容易控制重复，但不能证明对新视频、新背景或新场景的泛化。审核结果依赖人工补齐所有漏检，建议抽样复核。相同 epochs 下，数据变多也会增加更新次数；模型提升不能直接证明自动标注本身省人工。
 
@@ -249,7 +257,5 @@ $env:ALAB_PYTHON = 'D:\Path\To\Your\Environment\Scripts\python.exe'
 
 - [Ultralytics OBB 格式与训练接口](https://docs.ultralytics.com/tasks/obb/)
 - [Ultralytics 从 YAML 创建并训练模型](https://docs.ultralytics.com/modes/train/)
-- [X-AnyLabeling 旋转框 JSON 对应实现](https://github.com/CVHub520/X-AnyLabeling/blob/main/anylabeling/services/auto_labeling/__base__/yolo.py)
-- [X-AnyLabeling JSON 读写实现](https://github.com/CVHub520/X-AnyLabeling/blob/main/anylabeling/views/labeling/label_file.py)
 
 兼容验证环境的版本记录随模型写入 `model.json`，无需依赖文档中随时间变化的默认模型。

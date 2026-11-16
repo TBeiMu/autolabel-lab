@@ -12,9 +12,11 @@ def main():
     root.attributes("-topmost", True)
     if kind == "directory":
         selected = filedialog.askdirectory(title="选择目录", parent=root)
+    elif kind == "video":
+        filters = [("视频", "*.mp4 *.avi *.mov *.mkv *.wmv *.m4v"), ("所有文件", "*.*")]
+        selected = filedialog.askopenfilename(title="选择视频", filetypes=filters, parent=root)
     else:
-        filters = [("视频", "*.mp4 *.avi *.mov *.mkv *.wmv *.m4v"), ("所有文件", "*.*")] if kind == "video" else [("应用程序", "*.exe"), ("所有文件", "*.*")]
-        selected = filedialog.askopenfilename(title="选择视频" if kind == "video" else "选择 X-AnyLabeling 程序", filetypes=filters, parent=root)
+        raise ValueError("不支持的文件选择类型")
     root.destroy()
     print(json.dumps({"path": selected}, ensure_ascii=False))
 

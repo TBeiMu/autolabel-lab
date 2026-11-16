@@ -17,7 +17,7 @@ def quad(points, width, height, check_bounds=True):
     if array.shape != (4, 2) or not np.isfinite(array).all():
         raise LabError("旋转框必须包含四个有限二维坐标。")
     if check_bounds and ((array < 0).any() or (array[:, 0] > width).any() or (array[:, 1] > height).any()):
-        raise LabError("旋转框超出图片边界，请在 X-AnyLabeling 中修正后导入。")
+        raise LabError("旋转框超出图片边界，请在网页中修正后保存。")
     hull = cv2.convexHull(array.astype(np.float32)).reshape(-1, 2)
     if len(hull) != 4 or abs(cv2.contourArea(hull)) < 1:
         raise LabError("旋转框退化、重复点或不是凸四边形。")

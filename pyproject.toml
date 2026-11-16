@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autolabel-lab"
 version = "0.1.0"
-description = "Video-to-OBB annotation experiments with X-AnyLabeling"
+description = "Browser-based OBB annotation and training experiments"
 requires-python = ">=3.10"
 dependencies = ["opencv-python-headless>=4.10,<5", "numpy>=1.26,<3", "PyYAML>=6,<7", "psutil>=5.9,<8"]
 

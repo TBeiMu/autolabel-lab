@@ -200,6 +200,8 @@ def import_labels(project, subset=None, round_name=None, source=None, reviewed=F
         document = read_json(path)
         if not isinstance(document, dict) or not isinstance(document.get("flags", {}), dict):
             raise LabError(f"标注 JSON 和 flags 必须是对象：{path}")
+        if round_name and record.get("annotation_editor") == "web" and not document.get("flags", {}).get("autolabel_lab_reviewed"):
+            raise LabError(f"此图片尚未在网页确认审核：{frame['file']}，请打开并保存，包括无预测的图片。")
         if document.get("flags", {}).get("autolabel_lab_prediction") and not reviewed:
             raise LabError("检测到模型预测，请人工审核后使用 --reviewed。")
         shapes = parse_document(document, frame, project.config["classes"])

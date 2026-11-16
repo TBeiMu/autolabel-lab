@@ -158,7 +158,7 @@ def autolabel(project, name, model_name, count=25, frame_ids=None, conf=0.25, io
         (root / "editable" / "classes.txt").write_text("\n".join(project.config["classes"]) + "\n", encoding="utf-8")
         record.update(status="predicted", completed_at=now(), machine_seconds=time.perf_counter() - started)
         write_json(root / "round.json", record)
-        return {**record, "open_in_x_anylabeling": str(root / "editable")}
+        return {**record, "editable_folder": str(root / "editable")}
     except BaseException as exc:
         record.update(status="failed", error=str(exc), machine_seconds=time.perf_counter() - started)
         write_json(root / "round.json", record)

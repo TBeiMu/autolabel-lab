@@ -25,6 +25,7 @@ import psutil
 
 from .project import DEFAULT_MODEL_YAML, LabError, Project, now, read_json, safe_name, write_json
 from .reports import status
+from .annotation import read_annotation, save_annotation
 
 STATIC = Path(__file__).parent / "static"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -109,7 +110,8 @@ class Workspace:
         self.state_dir = self.root / ".gui"
         self.state_dir.mkdir(parents=True, exist_ok=True)
         self.registry_file = self.state_dir / "workspace.json"
-        self.state = read_json(self.registry_file) if self.registry_file.is_file() else {"projects": [], "xanylabeling": ""}
+        self.state = read_json(self.registry_file) if self.registry_file.is_file() else {"projects": []}
+        self.state.pop("xanylabeling", None)
         self.python = str(python or sys.executable)
         self.token = secrets.token_urlsafe(32)
         self.guard = threading.Lock()
@@ -235,7 +237,7 @@ class Workspace:
             self.reconcile_jobs()
             jobs = [dict(job) for job in self.jobs.values()]
         return {"app": "autolabel-lab", "workspace": str(self.root), "projects": projects, "jobs": jobs, "runtime": packages,
-                "default_model": DEFAULT_MODEL_YAML, "xanylabeling": self.state.get("xanylabeling", "")}
+                "default_model": DEFAULT_MODEL_YAML}
 
     def details(self, project_id):
         p = self.project(project_id)
@@ -249,6 +251,16 @@ class Workspace:
         models.sort(key=lambda model: model.get("created_at", ""))
         rounds = [read_json(path) for path in sorted((p.root / "rounds").glob("*/round.json"))]
         rounds.sort(key=lambda round_: round_.get("created_at", ""))
+        for record in rounds:
+            reviewed = 0
+            for frame_id in record["frame_ids"]:
+                path = p.root / "rounds" / record["name"] / "editable" / f"{frame_id}.json"
+                if path.is_file():
+                    try:
+                        reviewed += bool(read_json(path).get("flags", {}).get("autolabel_lab_reviewed"))
+                    except LabError:
+                        pass
+            record["web_reviewed_count"] = reviewed
         counts = {}
         for role in ["seed", "val", "test"]:
             frames = p.frames(role)
@@ -370,7 +382,7 @@ class Handler(BaseHTTPRequestHandler):
             query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
             if parsed.path == "/":
                 return self.send((STATIC / "index.html").read_bytes(), content_type="text/html; charset=utf-8")
-            if parsed.path in {"/app.js", "/style.css"}:
+            if parsed.path in {"/app.js", "/editor.js", "/style.css"}:
                 return self.send((STATIC / parsed.path[1:]).read_bytes(), content_type="text/javascript; charset=utf-8" if parsed.path.endswith(".js") else "text/css; charset=utf-8")
             if parsed.path == "/api/bootstrap":
                 return self.send({"token": self.workspace.token, **self.workspace.overview()})
@@ -378,6 +390,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(self.workspace.overview())
             if parsed.path == "/api/project":
                 return self.send(self.workspace.details(query["id"]))
+            if parsed.path == "/api/annotation":
+                return self.send(read_annotation(self.workspace.project(query["id"]), query["frame"],
+                                                query.get("subset"), query.get("round")))
             if parsed.path == "/api/log":
                 return self.send({"text": self.workspace.job_log(query["id"])})
             if parsed.path == "/api/file":
@@ -425,10 +440,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(ws.register(body["path"]))
             if path == "/api/job":
                 return self.send(ws.start_job(body["project_id"], body["action"], body.get("payload", {})))
+            if path == "/api/annotation":
+                if "revision" not in body:
+                    raise LabError("保存需要原标注版本，请重新加载页面。")
+                with ws.guard:
+                    ws.reconcile_jobs()
+                    if any(j["project_id"] == body["project_id"] and j["status"] in {"queued", "running", "cancelling", "recovering"}
+                           for j in ws.jobs.values()):
+                        raise LabError("本实验的后台任务正在运行，结束后再保存；草稿已保留。")
+                    result = save_annotation(ws.project(body["project_id"]), body["frame"], body["shapes"],
+                                             body["revision"], body.get("subset"), body.get("round"))
+                return self.send(result)
             if path == "/api/cancel":
                 return self.send(ws.cancel_job(body["id"]))
             if path == "/api/pick":
-                if body["kind"] not in {"video", "directory", "app"}:
+                if body["kind"] not in {"video", "directory"}:
                     raise LabError("不支持的文件选择。")
                 result = subprocess.run([ws.python, "-m", "autolabel_lab.dialog", body["kind"]], capture_output=True, text=True, encoding="utf-8", env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1]), "PYTHONIOENCODING": "utf-8"})
                 if result.returncode:
@@ -459,14 +485,6 @@ class Handler(BaseHTTPRequestHandler):
                                       "image": "data:image/jpeg;base64," + base64.b64encode(encoded).decode()})
                 finally:
                     capture.release()
-            if path == "/api/settings":
-                app = Path(body["xanylabeling"]).resolve()
-                if not app.is_file() or app.suffix.lower() != ".exe":
-                    raise LabError("请选择 X-AnyLabeling 的 .exe 程序。")
-                with ws.guard:
-                    ws.state["xanylabeling"] = str(app)
-                    ws.save()
-                return self.send({"path": str(app)})
             if path == "/api/open-folder":
                 p = ws.project(body["project_id"])
                 location = body.get("location", "root")
@@ -484,11 +502,6 @@ class Handler(BaseHTTPRequestHandler):
                     os.startfile(str(folder))
                 else:
                     subprocess.Popen(["xdg-open", str(folder)])
-                if body.get("launch_app"):
-                    executable = ws.state.get("xanylabeling", "")
-                    if not executable or not Path(executable).is_file():
-                        raise LabError("请先在右上角设置 X-AnyLabeling 程序。目录已打开。")
-                    subprocess.Popen([executable], creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
                 return self.send({"path": str(folder)})
             return self.send({"error": "未知操作。"}, 404)
         except (KeyError, LabError, OSError, ValueError, TypeError) as exc:
