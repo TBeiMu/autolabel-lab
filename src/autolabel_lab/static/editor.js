@@ -3,7 +3,8 @@
 // Image-space geometry stays independent of canvas scaling and device pixel ratio.
 const WebAnnotator = (() => {
   const clone = value => JSON.parse(JSON.stringify(value));
-  let E = null, loadGeneration = 0;
+  let E = null, loadGeneration = 0, clipboard = null, boxSequence = 0;
+  const boxId = () => 'box-'+(++boxSequence);
   const dialog = () => document.getElementById('annotation-dialog');
   const el = id => document.getElementById(id);
   function corners(box) {
@@ -14,12 +15,30 @@ const WebAnnotator = (() => {
   function fromShape(shape) {
     let pts=clone(shape.points);
     if(pts.length===2){const [a,b]=pts;pts=[a,[b[0],a[1]],b,[a[0],b[1]]]}
-    return {label:shape.label,score:shape.score,cx:pts.reduce((n,p)=>n+p[0],0)/4,cy:pts.reduce((n,p)=>n+p[1],0)/4,
+    return {id:boxId(),label:shape.label,score:shape.score,cx:pts.reduce((n,p)=>n+p[0],0)/4,cy:pts.reduce((n,p)=>n+p[1],0)/4,
       w:Math.hypot(pts[1][0]-pts[0][0],pts[1][1]-pts[0][1]),h:Math.hypot(pts[2][0]-pts[1][0],pts[2][1]-pts[1][1]),
       angle:Math.atan2(pts[1][1]-pts[0][1],pts[1][0]-pts[0][0]),original:pts};
   }
   function local(box,p) {const dx=p[0]-box.cx,dy=p[1]-box.cy,c=Math.cos(box.angle),s=Math.sin(box.angle);return [dx*c+dy*s,-dx*s+dy*c]}
   function color(box) {return COLORS[Math.max(0,E.classes.indexOf(box.label))%COLORS.length]}
+  function outside(box) {return corners(box).some(p=>!Number.isFinite(p[0])||!Number.isFinite(p[1])||p[0]<0||p[1]<0||p[0]>E.frame.width||p[1]>E.frame.height)}
+  function boxRows() {return E.boxes.map((box,index)=>({box,index,number:index+1,invalid:outside(box)}))}
+  function selectBox(id) {if(!E||E.busy||E.gesture)return;E.selected=E.boxes.findIndex(b=>b.id===id);renderList();draw()}
+  function checkBounds() {
+    if(!E?.frame||!el('ann-bounds'))return;
+    const rows=boxRows(),byId=new Map(rows.map(row=>[row.box.id,row])),bad=rows.filter(row=>row.invalid);el('ann-bounds').hidden=!bad.length;
+    el('ann-bounds').innerHTML=bad.length?`<strong>⚠ ${bad.length} 个框超出图片边界</strong><span>点击序号定位，调整后才能保存。</span><div>${bad.map(row=>`<button class="ann-check-box" data-check-box="${row.box.id}">检查框 ${row.number}</button>`).join('')}</div>`:'';
+    el('ann-bounds').querySelectorAll('[data-check-box]').forEach(b=>b.onclick=()=>focusBox(b.dataset.checkBox));
+    el('ann-boxes').querySelectorAll('[data-box-id]').forEach(button=>{const invalid=byId.get(button.dataset.boxId)?.invalid;button.classList.toggle('out-of-bounds',!!invalid);const flag=button.querySelector('.ann-bound-flag');if(flag)flag.hidden=!invalid});
+  }
+  function focusBox(id) {
+    if(!E?.image||E.busy||E.gesture)return;selectBox(id);if(E.selected<0)return;
+    const pts=corners(E.boxes[E.selected]),xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);
+    const left=Math.min(...xs),right=Math.max(...xs),top=Math.min(...ys),bottom=Math.max(...ys);
+    E.scale=Math.max(.01,Math.min(4,(E.viewport[0]-60)/Math.max(1,right-left),(E.viewport[1]-60)/Math.max(1,bottom-top)));
+    E.offset=[E.viewport[0]/2-(left+right)/2*E.scale,E.viewport[1]/2-(top+bottom)/2*E.scale];draw();
+    el('ann-boxes').querySelector(`[data-box-id="${id}"]`)?.scrollIntoView({block:'nearest'});el('ann-canvas').focus();
+  }
   function key(frame=E.frame) {return `alab-annotation:${E.projectId}:${E.round||E.subset}:${frame.id}`}
   function draft() {
     if(!E||E.readOnly||!E.frame)return;
@@ -29,7 +48,7 @@ const WebAnnotator = (() => {
   function message(text,error=false) {if(el('ann-status')){el('ann-status').textContent=text;el('ann-status').classList.toggle('danger-text',error)}}
   function snapshot() {E.undo.push(clone(E.boxes));if(E.undo.length>80)E.undo.shift();E.redo=[]}
   function changed() {E.dirty=true;draft();renderList();draw();message('有未保存修改 · Ctrl+S 保存')}
-  function available() {return E&&!E.busy&&!E.readOnly}
+  function available() {return E&&!E.busy&&!E.readOnly&&!E.gesture}
   function setBusy(busy) {E.busy=busy;renderList()}
   function params(frame) {return `id=${encodeURIComponent(E.projectId)}&frame=${encodeURIComponent(frame.id)}&${E.round?'round='+encodeURIComponent(E.round):'subset='+E.subset}`}
   async function fetchAnnotation(frame) {return api('/api/annotation?'+params(frame))}
@@ -37,11 +56,12 @@ const WebAnnotator = (() => {
     dialog().innerHTML=`<div class="ann-header"><div><div class="eyebrow">WEB ANNOTATION / OBB</div><h2 id="ann-title">正在加载图片</h2><span id="ann-file"></span></div><button class="btn" id="ann-close">保存并关闭</button></div>
       <div class="ann-toolbar"><button class="btn" id="ann-select">选择 / 调整 V</button><button class="btn" id="ann-draw">画框 D</button>
       <button class="btn" id="ann-undo">撤销</button><button class="btn" id="ann-redo">重做</button><button class="btn" id="ann-delete">删除框</button>
+      <button class="btn" id="ann-copy-box">复制框 Ctrl+C</button><button class="btn" id="ann-paste-box">粘贴框 Ctrl+V</button>
       <button class="btn" id="ann-copy">复制上一张框 C</button><button class="btn" id="ann-zoom-out">−</button><span id="ann-zoom"></span><button class="btn" id="ann-zoom-in">＋</button><button class="btn" id="ann-fit">适应窗口</button>
       ${E.round?'<label class="ann-toggle"><input id="ann-show-raw" type="checkbox" checked>对照原始预测</label>':''}</div>
       <div class="ann-layout"><div class="ann-images"><div class="ann-stage" id="ann-stage"><canvas id="ann-canvas" tabindex="0" aria-label="图片标注画布"></canvas></div>${E.round?'<div class="ann-raw" id="ann-raw-panel"><h3>原始预测 · 只读</h3><canvas id="ann-raw"></canvas></div>':''}</div>
       <aside class="ann-inspector"><label for="ann-class">框的类别 / 新框类别</label><select id="ann-class">${E.classes.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select><div class="field"><label for="ann-angle">旋转角度（度）</label><input id="ann-angle" type="number" step="1"></div>
-      <div class="ann-boxes" id="ann-boxes"></div><p class="form-help">拖动画框；选择框后拖动内部移动、四角调整尺寸、圆点旋转。滚轮缩放，按空格拖动平移。框须在图片边界内。</p><p class="form-help">复制上一张会追加框，之后请按当前图片调整。无目标图片也要保存；审核时保存表示已检查此张。</p>
+      <div id="ann-bounds" class="ann-bounds" role="alert" hidden></div><div class="ann-boxes" id="ann-boxes"></div><p class="form-help">拖动画框；选择框后拖动内部移动、四角调整尺寸、圆点旋转。滚轮缩放，按空格拖动平移。框须在图片边界内。</p><p class="form-help">选中框后 Ctrl+C 复制、Ctrl+V 粘贴；可粘到其他图片。C 复制上一张全部框。无目标图片也要保存；审核时保存表示已检查此张。</p>
       <button class="btn" id="ann-reload">丢弃草稿并重新加载</button></aside></div>
       <div class="ann-footer"><div><strong id="ann-position"></strong><span id="ann-status" role="status"></span></div><div class="buttons"><button class="btn" id="ann-prev">← 上一张</button><button class="btn primary" id="ann-save">保存 Ctrl+S</button><button class="btn primary" id="ann-next">保存并下一张 →</button></div></div>`;
     el('ann-close').onclick=()=>action(close);
@@ -49,6 +69,7 @@ const WebAnnotator = (() => {
     el('ann-prev').onclick=()=>action(()=>navigate(-1));el('ann-next').onclick=()=>action(()=>navigate(1));
     el('ann-select').onclick=()=>mode('select');el('ann-draw').onclick=()=>mode('draw');
     el('ann-copy').onclick=()=>action(copyPrevious);el('ann-delete').onclick=remove;
+    el('ann-copy-box').onclick=copyBox;el('ann-paste-box').onclick=()=>action(pasteBox);
     el('ann-undo').onclick=()=>history('undo');el('ann-redo').onclick=()=>history('redo');
     el('ann-fit').onclick=fit;el('ann-zoom-in').onclick=()=>zoom(1.25);el('ann-zoom-out').onclick=()=>zoom(.8);
     el('ann-class').onchange=()=>{if(!available())return;E.label=el('ann-class').value;if(E.selected>=0){snapshot();E.boxes[E.selected].label=E.label;changed()}};
@@ -80,6 +101,7 @@ const WebAnnotator = (() => {
       E.dirty=false;E.undo=[];E.redo=[];E.selected=-1;E.gesture=null;
       let restored=false;
       if(restore&&!E.readOnly){try{const saved=JSON.parse(localStorage.getItem(key()));if(saved){E.boxes=saved.boxes;E.revision=saved.revision;E.dirty=true;restored=true}}catch{}}
+      E.boxes.forEach(box=>box.id=boxId());
       el('ann-title').textContent=(E.round?'审核 '+E.round:ROLE[E.subset])+' · '+frameCaption(E.frame)+(E.readOnly?' · 已归档，只读':'');
       el('ann-file').textContent=(E.frame.source_name||E.frame.file)+` · ${E.frame.width} × ${E.frame.height}`;
       el('ann-position').textContent=`${index+1} / ${E.frames.length}`;
@@ -97,24 +119,29 @@ const WebAnnotator = (() => {
   function draw() {
     if(!E?.image)return;const ctx=el('ann-canvas').getContext('2d');ctx.setTransform(E.dpr,0,0,E.dpr,0,0);ctx.fillStyle='#152421';ctx.fillRect(0,0,...E.viewport);
     ctx.translate(...E.offset);ctx.scale(E.scale,E.scale);ctx.drawImage(E.image,0,0,E.frame.width,E.frame.height);
-    E.boxes.forEach((box,index)=>{const pts=corners(box),selected=index===E.selected;ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.strokeStyle=color(box);ctx.lineWidth=(selected?3:1.8)/E.scale;ctx.stroke();
+    boxRows().forEach(({box,index,number,invalid})=>{const pts=corners(box),selected=index===E.selected,stroke=invalid?'#dc3f36':color(box);ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.strokeStyle=stroke;ctx.lineWidth=(invalid?4:selected?3:1.8)/E.scale;ctx.setLineDash(invalid?[7/E.scale,4/E.scale]:[]);ctx.stroke();ctx.setLineDash([]);
       if(selected){ctx.fillStyle=color(box);ctx.globalAlpha=.13;ctx.fill();ctx.globalAlpha=1}
-      ctx.font=`${12/E.scale}px Segoe UI,Microsoft YaHei`;ctx.fillStyle=color(box);const text=`${index+1}. ${box.label}`;const x=Math.max(0,pts[0][0]),y=Math.max(16/E.scale,pts[0][1]);ctx.fillRect(x,y-17/E.scale,ctx.measureText(text).width+8/E.scale,19/E.scale);ctx.fillStyle='white';ctx.fillText(text,x+4/E.scale,y-3/E.scale);
+      ctx.font=`${12/E.scale}px Segoe UI,Microsoft YaHei`;ctx.fillStyle=stroke;const text=`${number}. ${box.label}${invalid?' · 越界':''}`;const x=Math.max(0,Math.min(pts[0][0],E.frame.width-(ctx.measureText(text).width+8/E.scale))),y=Math.max(16/E.scale,Math.min(pts[0][1],E.frame.height-2/E.scale));ctx.fillRect(x,y-17/E.scale,ctx.measureText(text).width+8/E.scale,19/E.scale);ctx.fillStyle='white';ctx.fillText(text,x+4/E.scale,y-3/E.scale);
       if(selected&&!E.readOnly){ctx.fillStyle='white';for(const p of pts){ctx.fillRect(p[0]-5/E.scale,p[1]-5/E.scale,10/E.scale,10/E.scale);ctx.strokeRect(p[0]-5/E.scale,p[1]-5/E.scale,10/E.scale,10/E.scale)}const hp=handle(box);ctx.beginPath();ctx.moveTo(box.cx+Math.sin(box.angle)*box.h/2,box.cy-Math.cos(box.angle)*box.h/2);ctx.lineTo(...hp);ctx.stroke();ctx.beginPath();ctx.arc(...hp,6/E.scale,0,Math.PI*2);ctx.fill();ctx.stroke()}
     });
     if(E.gesture?.type==='draw'){const a=E.gesture.start,b=E.gesture.current;ctx.strokeStyle='white';ctx.lineWidth=2/E.scale;ctx.setLineDash([6/E.scale,4/E.scale]);ctx.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1]);ctx.setLineDash([])}
     el('ann-zoom').textContent=Math.round(E.scale*100)+'%';
+    checkBounds();
   }
   function renderList() {
-    if(!E)return;el('ann-boxes').innerHTML=E.boxes.map((b,i)=>`<button class="ann-box ${i===E.selected?'selected':''}" data-box="${i}" style="border-left-color:${color(b)}"><strong>${i+1}. ${esc(b.label)}</strong><small>${Math.round(b.w)} × ${Math.round(b.h)} · ${(b.angle*180/Math.PI).toFixed(1)}°${b.score!=null?' · 预测 '+Number(b.score).toFixed(2):''}</small></button>`).join('')||'<p>当前没有框</p>';
-    el('ann-boxes').querySelectorAll('[data-box]').forEach(b=>b.onclick=()=>{if(E.busy)return;E.selected=Number(b.dataset.box);renderList();draw()});
+    if(!E)return;if(E.selected>=E.boxes.length)E.selected=E.boxes.length-1;
+    el('ann-boxes').innerHTML=boxRows().map(({box:b,index:i,number,invalid})=>`<button class="ann-box ${i===E.selected?'selected':''} ${invalid?'out-of-bounds':''}" data-box="${i}" data-box-id="${b.id}" style="border-left-color:${color(b)}"><strong>${number}. ${esc(b.label)}</strong><span class="ann-bound-flag" ${invalid?'':'hidden'}>越界，请检查</span><small>${Math.round(b.w)} × ${Math.round(b.h)} · ${(b.angle*180/Math.PI).toFixed(1)}°${b.score!=null?' · 预测 '+Number(b.score).toFixed(2):''}</small></button>`).join('')||'<p>当前没有框</p>';
+    el('ann-boxes').querySelectorAll('[data-box-id]').forEach(b=>b.onclick=()=>selectBox(b.dataset.boxId));
     for(const id of ['ann-select','ann-draw','ann-class','ann-copy','ann-save'])el(id).disabled=E.busy||E.readOnly;
     el('ann-copy').disabled||=E.index===0;
+    el('ann-copy-box').disabled=E.busy||!E.image||E.selected<0;
+    el('ann-paste-box').disabled=E.busy||E.readOnly||!clipboard||!E.classes.includes(clipboard.label);
     for(const id of ['ann-delete','ann-angle'])el(id).disabled=E.busy||E.readOnly||E.selected<0;
     el('ann-undo').disabled=E.busy||E.readOnly||!E.undo.length;el('ann-redo').disabled=E.busy||E.readOnly||!E.redo.length;
     el('ann-prev').disabled=E.busy||E.index===0;el('ann-next').disabled=E.busy||E.index===E.frames.length-1;el('ann-close').disabled=E.busy;
     el('ann-reload').disabled=E.busy;el('ann-next').textContent=E.readOnly?'下一张 →':'保存并下一张 →';el('ann-close').textContent=E.readOnly?'关闭':'保存并关闭';
     if(E.selected>=0){const b=E.boxes[E.selected];el('ann-class').value=b.label;el('ann-angle').value=(b.angle*180/Math.PI).toFixed(1)}else{el('ann-class').value=E.label;el('ann-angle').value=''}
+    checkBounds();
   }
   function mode(value) {if(!E)return;E.mode=value;el('ann-draw').classList.toggle('primary',value==='draw');el('ann-select').classList.toggle('primary',value==='select');el('ann-canvas').style.cursor=value==='draw'?'crosshair':'default'}
   function pointerDown(event) {
@@ -146,11 +173,25 @@ const WebAnnotator = (() => {
     if(!E?.gesture)return;const g=E.gesture;E.gesture=null;
     if(el('ann-canvas').hasPointerCapture(event.pointerId))el('ann-canvas').releasePointerCapture(event.pointerId);
     if(g.type==='pan')return;
-    if(g.type==='draw'){const [a,b]=[g.start,g.current],w=Math.abs(b[0]-a[0]),h=Math.abs(b[1]-a[1]);if(w<1||h<1){draw();return}E.boxes.push({label:E.label,cx:(a[0]+b[0])/2,cy:(a[1]+b[1])/2,w,h,angle:0});E.selected=E.boxes.length-1}
+    if(g.type==='draw'){const [a,b]=[g.start,g.current],w=Math.abs(b[0]-a[0]),h=Math.abs(b[1]-a[1]);if(w<1||h<1){draw();return}E.boxes.push({id:boxId(),label:E.label,cx:(a[0]+b[0])/2,cy:(a[1]+b[1])/2,w,h,angle:0});E.selected=E.boxes.length-1}
     if(JSON.stringify(g.before)!==JSON.stringify(E.boxes)){E.undo.push(g.before);if(E.undo.length>80)E.undo.shift();E.redo=[];changed()}else{renderList();draw()}
   }
-  function remove() {if(!available()||E.selected<0)return;snapshot();E.boxes.splice(E.selected,1);E.selected=-1;changed()}
+  function remove() {if(!available()||E.selected<0)return;snapshot();const index=E.selected;E.boxes.splice(index,1);E.selected=Math.min(index,E.boxes.length-1);changed()}
   function history(direction) {if(!available()||!E[direction].length)return;const other=direction==='undo'?'redo':'undo';E[other].push(clone(E.boxes));E.boxes=E[direction].pop();E.selected=-1;changed()}
+  function copyBox() {
+    if(!E?.image||E.busy||E.gesture||E.selected<0)return;const box=E.boxes[E.selected];
+    clipboard={label:box.label,points:clone(corners(box)),width:E.frame.width,height:E.frame.height,source:key(),pasteCount:0};
+    renderList();message(`已复制框 ${E.selected+1}（${box.label}），Ctrl+V 粘贴。`);
+  }
+  function pasteBox() {
+    if(!available()||!E.image||!clipboard)return;
+    if(!E.classes.includes(clipboard.label))throw new Error('复制框的类别不属于当前实验，请复制当前实验的框。');
+    const same=clipboard.source===key(),offset=same?12*(clipboard.pasteCount+1):0;
+    let pts=clipboard.points.map(p=>[p[0]*E.frame.width/clipboard.width,p[1]*E.frame.height/clipboard.height]);
+    if(offset){const dx=Math.max(0,Math.min(offset,E.frame.width-Math.max(...pts.map(p=>p[0])))),dy=Math.max(0,Math.min(offset,E.frame.height-Math.max(...pts.map(p=>p[1]))));pts=pts.map(p=>[p[0]+dx,p[1]+dy])}
+    snapshot();E.boxes.push(fromShape({label:clipboard.label,points:pts}));E.selected=E.boxes.length-1;clipboard.pasteCount++;mode('select');changed();
+    message(`已粘贴为框 ${E.selected+1}，请调整位置后保存。`);
+  }
   async function copyPrevious() {
     if(!available()||E.index===0)return;setBusy(true);
     try{const prev=E.frames[E.index-1],data=await fetchAnnotation(prev);if(!data.saved)throw new Error('上一张还没有保存标注。');const shapes=data.document.shapes.map(shape=>({...shape,points:shape.points.map(p=>[p[0]*E.frame.width/prev.width,p[1]*E.frame.height/prev.height])}));
@@ -160,9 +201,9 @@ const WebAnnotator = (() => {
   async function save() {
     if(!E||E.readOnly||E.busy)return false;if(E.gesture)throw new Error('请先完成当前框选操作。');
     const shapes=E.boxes.map(box=>({label:box.label,points:corners(box),shape_type:'rotation',flags:{}}));
-    if(shapes.some(shape=>shape.points.some(p=>p[0]<0||p[1]<0||p[0]>E.frame.width||p[1]>E.frame.height)))throw new Error('有框超出图片边界，请调整后保存。');
+    const invalid=boxRows().filter(row=>row.invalid);if(invalid.length){focusBox(invalid[0].box.id);throw new Error(`框 ${invalid.map(row=>row.number).join('、')} 超出图片边界，已高亮，请调整后保存。`)}
     setBusy(true);
-    try{const result=await api('/api/annotation',{project_id:E.projectId,frame:E.frame.id,subset:E.round?undefined:E.subset,round:E.round||undefined,revision:E.revision,shapes});E.revision=result.revision;E.dirty=false;E.boxes=result.document.shapes.map(fromShape);draft();message(E.round?'已保存并确认此张审核。':'已保存标注。');return true}
+    try{const result=await api('/api/annotation',{project_id:E.projectId,frame:E.frame.id,subset:E.round?undefined:E.subset,round:E.round||undefined,revision:E.revision,shapes});E.revision=result.revision;E.dirty=false;const ids=E.boxes.map(b=>b.id);E.boxes=result.document.shapes.map((shape,i)=>({...fromShape(shape),id:ids[i]}));draft();message(E.round?'已保存并确认此张审核。':'已保存标注。');return true}
     catch(error){draft();throw error}finally{setBusy(false);draw()}
   }
   async function navigate(delta) {if(!E||E.busy)return;const index=E.index+delta;if(index<0||index>=E.frames.length)return;if(!E.readOnly&&E.image)await save();await load(index)}
@@ -176,7 +217,9 @@ const WebAnnotator = (() => {
     if(/INPUT|SELECT|TEXTAREA/.test(event.target.tagName))return;
     if(E.busy)return;
     const key=event.key.toLowerCase();
-    if((event.ctrlKey||event.metaKey)&&['z','y'].includes(key)){event.preventDefault();history(key==='y'||event.shiftKey?'redo':'undo')}
+    if((event.ctrlKey||event.metaKey)&&key==='c'){event.preventDefault();copyBox()}
+    else if((event.ctrlKey||event.metaKey)&&key==='v'){event.preventDefault();action(pasteBox)}
+    else if((event.ctrlKey||event.metaKey)&&['z','y'].includes(key)){event.preventDefault();history(key==='y'||event.shiftKey?'redo':'undo')}
     else if(key==='d')mode('draw');else if(key==='v')mode('select');else if(key==='c')action(copyPrevious);
     else if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();remove()}
     else if(event.key==='ArrowRight'){event.preventDefault();action(()=>navigate(1))}else if(event.key==='ArrowLeft'){event.preventDefault();action(()=>navigate(-1))}
