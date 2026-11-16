@@ -130,8 +130,9 @@ const WebAnnotator = (() => {
   }
   function renderList() {
     if(!E)return;if(E.selected>=E.boxes.length)E.selected=E.boxes.length-1;
-    el('ann-boxes').innerHTML=boxRows().map(({box:b,index:i,number,invalid})=>`<button class="ann-box ${i===E.selected?'selected':''} ${invalid?'out-of-bounds':''}" data-box="${i}" data-box-id="${b.id}" style="border-left-color:${color(b)}"><strong>${number}. ${esc(b.label)}</strong><span class="ann-bound-flag" ${invalid?'':'hidden'}>越界，请检查</span><small>${Math.round(b.w)} × ${Math.round(b.h)} · ${(b.angle*180/Math.PI).toFixed(1)}°${b.score!=null?' · 预测 '+Number(b.score).toFixed(2):''}</small></button>`).join('')||'<p>当前没有框</p>';
+    el('ann-boxes').innerHTML=boxRows().map(({box:b,index:i,number,invalid})=>`<div class="ann-box-row"><button class="ann-box ${i===E.selected?'selected':''} ${invalid?'out-of-bounds':''}" data-box="${i}" data-box-id="${b.id}" style="border-left-color:${color(b)}"><strong>${number}. ${esc(b.label)}</strong><span class="ann-bound-flag" ${invalid?'':'hidden'}>越界，请检查</span><small>${Math.round(b.w)} × ${Math.round(b.h)} · ${(b.angle*180/Math.PI).toFixed(1)}°${b.score!=null?' · 预测 '+Number(b.score).toFixed(2):''}</small></button><button class="ann-row-delete" data-delete-box="${b.id}" aria-label="删除框 ${number}：${esc(b.label)}" title="删除此框" ${E.busy||E.readOnly?'disabled':''}>删除</button></div>`).join('')||'<p>当前没有框</p>';
     el('ann-boxes').querySelectorAll('[data-box-id]').forEach(b=>b.onclick=()=>selectBox(b.dataset.boxId));
+    el('ann-boxes').querySelectorAll('[data-delete-box]').forEach(b=>b.onclick=()=>removeBox(b.dataset.deleteBox));
     for(const id of ['ann-select','ann-draw','ann-class','ann-copy','ann-save'])el(id).disabled=E.busy||E.readOnly;
     el('ann-copy').disabled||=E.index===0;
     el('ann-copy-box').disabled=E.busy||!E.image||E.selected<0;
@@ -176,7 +177,12 @@ const WebAnnotator = (() => {
     if(g.type==='draw'){const [a,b]=[g.start,g.current],w=Math.abs(b[0]-a[0]),h=Math.abs(b[1]-a[1]);if(w<1||h<1){draw();return}E.boxes.push({id:boxId(),label:E.label,cx:(a[0]+b[0])/2,cy:(a[1]+b[1])/2,w,h,angle:0});E.selected=E.boxes.length-1}
     if(JSON.stringify(g.before)!==JSON.stringify(E.boxes)){E.undo.push(g.before);if(E.undo.length>80)E.undo.shift();E.redo=[];changed()}else{renderList();draw()}
   }
-  function remove() {if(!available()||E.selected<0)return;snapshot();const index=E.selected;E.boxes.splice(index,1);E.selected=Math.min(index,E.boxes.length-1);changed()}
+  function removeBox(id) {
+    if(!available())return;const index=E.boxes.findIndex(box=>box.id===id);if(index<0)return;
+    const selectedId=E.boxes[E.selected]?.id;snapshot();E.boxes.splice(index,1);
+    E.selected=selectedId===id?Math.min(index,E.boxes.length-1):E.boxes.findIndex(box=>box.id===selectedId);changed();
+  }
+  function remove() {if(E?.selected>=0)removeBox(E.boxes[E.selected]?.id)}
   function history(direction) {if(!available()||!E[direction].length)return;const other=direction==='undo'?'redo':'undo';E[other].push(clone(E.boxes));E.boxes=E[direction].pop();E.selected=-1;changed()}
   function copyBox() {
     if(!E?.image||E.busy||E.gesture||E.selected<0)return;const box=E.boxes[E.selected];

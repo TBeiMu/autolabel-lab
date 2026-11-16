@@ -63,18 +63,22 @@ s.serve_forever()
       await drag(await point(x,80),await point(x+60,130));
     }
     const row=page.locator('.ann-box');
-    await row.nth(1).click();await page.locator('#ann-delete').click();
+    await row.nth(2).click();const selectedLast=await row.nth(2).getAttribute('data-box-id');
+    await page.locator('[data-delete-box]').nth(1).click();
     assert.deepEqual(await row.locator('strong').allTextContents(),['1. target','2. target']);
     assert.deepEqual(await page.evaluate(()=>window.drawnLabels),['1. target','2. target']);
     assert.equal(await page.locator('.ann-box.selected').getAttribute('data-box'),'1');
+    assert.equal(await page.locator('.ann-box.selected').getAttribute('data-box-id'),selectedLast);
     await page.selectOption('#ann-class','other');await page.locator('#ann-save').click();
     await page.waitForFunction(()=>document.querySelector('#ann-status').textContent.includes('已保存'));
     let saved=(await read('f0')).document.shapes;
     assert.equal(saved.length,2);assert.equal(saved[1].label,'other');assert(saved[1].points.every(p=>p[0]>=300));
-    await row.first().click();await page.locator('#ann-delete').click();
+    await page.locator('[data-delete-box]').first().click();
     assert.deepEqual(await row.locator('strong').allTextContents(),['1. other']);
     assert.deepEqual(await page.evaluate(()=>window.drawnLabels),['1. other']);
     assert.equal(await page.locator('.ann-box.selected').getAttribute('data-box'),'0');
+    assert.equal(await page.locator('.ann-box.selected').getAttribute('data-box-id'),selectedLast);
+    assert.equal(await page.locator('[data-delete-box]').first().getAttribute('aria-label'),'删除框 1：other');
     await page.locator('#ann-undo').click();assert.equal(await row.count(),2);
     await page.locator('#ann-redo').click();assert.equal(await row.count(),1);
     await row.first().click();await page.locator('#ann-angle').fill('20');await page.locator('#ann-angle').dispatchEvent('change');
@@ -94,9 +98,18 @@ s.serve_forever()
     await row.first().click();await page.locator('#ann-angle').focus();await page.keyboard.press('Control+v');assert.equal(await row.count(),1);
     await page.locator('#ann-canvas').focus();await page.keyboard.press('Control+v');assert.equal(await row.count(),2);
     await page.locator('#ann-undo').click();assert.equal(await row.count(),1);
-    await row.first().click();await page.locator('#ann-delete').click();assert.equal(await row.count(),0);assert(await page.locator('#ann-copy-box').isDisabled());
+    await row.first().click();await page.locator('[data-delete-box]').first().click();assert.equal(await row.count(),0);assert(await page.locator('#ann-copy-box').isDisabled());
     await page.locator('#ann-undo').click();await page.locator('#ann-close').click();
-    checks.push('middle/first/last deletion, matching canvas/list numbering and saved selection', 'copy/paste via shortcuts and buttons, rotation, cross-image scaling and undo');
+    const boot=await(await fetch(base+'/api/bootstrap')).json();
+    const importResponse=await fetch(base+'/api/job',{method:'POST',headers:{'Content-Type':'application/json','X-Lab-Token':boot.token},body:JSON.stringify({project_id:id,action:'import-labels',payload:{subset:'seed'}})});
+    assert.equal(importResponse.status,200);const job=await importResponse.json();
+    for(let i=0;i<100;i++){const state=await(await fetch(base+'/api/overview')).json();const current=state.jobs.find(j=>j.id===job.id);if(!['queued','running','recovering'].includes(current.status)){assert.equal(current.status,'completed');break;}await page.waitForTimeout(100);if(i===99)throw new Error('Archive job timed out')}
+    await page.evaluate(()=>refresh(true));await page.locator('[data-annotate-subset=seed]').first().click();
+    await page.waitForFunction(()=>document.querySelector('#ann-title').textContent.includes('只读'));
+    assert.equal(await page.locator('[data-delete-box]').count(),2);
+    for(const button of await page.locator('[data-delete-box]').all())assert(await button.isDisabled());
+    await page.locator('#ann-close').click();
+    checks.push('sidebar deletes first/middle/last box, keeps other selection and correct numbering', 'row deletion undo, saved result and archived read-only protection', 'copy/paste via shortcuts and buttons, rotation, cross-image scaling and undo');
     await page.locator('#nav [data-page=auto]').click();await page.locator('[data-annotate-round=r1]').click();
     await page.waitForFunction(()=>document.querySelectorAll('.ann-box').length===2);
     assert.equal(await page.locator('.ann-box.out-of-bounds').count(),2);
@@ -113,7 +126,7 @@ s.serve_forever()
     await drag(await point(10,60),await point(65,60));
     assert.equal(await page.locator('.ann-box.out-of-bounds').count(),1);
     assert.equal(await page.locator('.ann-check-box').count(),1);
-    await page.locator('[data-check-box]').click();await page.locator('#ann-delete').click();
+    await page.locator('[data-check-box]').click();await page.locator('[data-delete-box]').nth(1).click();
     assert(await page.locator('#ann-bounds').isHidden());assert.equal(await page.locator('.ann-box.out-of-bounds').count(),0);
     await page.locator('#ann-save').click();await page.waitForFunction(()=>document.querySelector('#ann-status').textContent.includes('已保存'));
     const result=await read('f4','','r1');assert.deepEqual(result.raw,raw);assert.equal(result.document.shapes.length,1);
