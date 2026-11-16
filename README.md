@@ -156,6 +156,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup.ps1 -Trainin
 
 ## 从零训练 M0
 
+「模型训练」支持本机或局域网 GPU 服务器，可选择 172.21.23.205 的两张 RTX 4090 D、172.21.23.182 的两张 RTX 3090，或各服务器的双卡训练。先点击「检测环境与 GPU」查看显存和利用率，再选择训练位置、服务器和 GPU。日志、曲线和训练完成的权重回传本机；详见 [服务器训练指南](docs/server-training.md)。
+
 先检查导出的 YOLO OBB 数据和训练计划，再执行训练。两条命令可以用同一个名称；dry-run 不创建模型，也不会加载训练依赖。
 
 ```powershell

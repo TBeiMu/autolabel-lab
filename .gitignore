@@ -5,6 +5,7 @@ __pycache__/
 experiments/
 _smoke/
 runtime.local.json
+servers.local.json
 *.pt
 *.onnx
 .gui/

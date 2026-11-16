@@ -70,6 +70,12 @@ def parser():
     cmd.add_argument("--batch", type=int, default=4)
     cmd.add_argument("--device", default="cpu", help="cpu 或 GPU 编号 0")
     cmd.add_argument("--dry-run", action="store_true", help="仅导出数据快照和训练计划，不加载训练库")
+    cmd.add_argument("--target", choices=["local", "server"], default="local")
+    cmd.add_argument("--server-id")
+    cmd.add_argument("--workspace", help="服务器配置所在的工作台根目录")
+    cmd = sub.add_parser("recover-remote", help="恢复监控中断的服务器训练并回传模型")
+    cmd.add_argument("--name", required=True)
+    cmd.add_argument("--workspace", required=True)
     cmd = sub.add_parser("autolabel", help="用已训练模型预标注未使用的训练池图片")
     cmd.add_argument("--round", dest="name", required=True)
     cmd.add_argument("--model", dest="model_name", required=True)
@@ -105,7 +111,9 @@ def main(argv=None):
             result = status(project)
         else:
             project = Project(root)
+            from .remote import recover
             actions = {"extract": extract, "split": split, "import-yolo": import_yolo, "import-labels": import_labels, "train": train,
+                       "recover-remote": recover,
                        "autolabel": autolabel, "evaluate": evaluate, "time": record_time, "report": report, "status": status}
             if command == "status":
                 result = status(project)

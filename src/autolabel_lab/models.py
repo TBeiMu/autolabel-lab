@@ -32,7 +32,14 @@ def versions():
 
 
 def train(project, name, rounds=(), init="scratch", from_model=None, model_yaml=None,
-          epochs=100, imgsz=640, batch=4, device="cpu", dry_run=False):
+          epochs=100, imgsz=640, batch=4, device="cpu", dry_run=False, target="local", server_id=None, workspace=None):
+    if target not in {"local", "server"}:
+        raise LabError("训练位置必须是 local 或 server。")
+    server = None
+    if target == "server":
+        from .remote import server_config, validate_devices
+        server = server_config(workspace or Path.cwd(), server_id)
+        validate_devices(device, batch)
     name = safe_name(name)
     model_yaml = model_yaml or project.config["model_yaml"]
     if init == "scratch" and Path(model_yaml).suffix.lower() not in {".yaml", ".yml"}:
@@ -54,7 +61,7 @@ def train(project, name, rounds=(), init="scratch", from_model=None, model_yaml=
         # A continued model cannot drop labels that its parent has already seen.
         if not set(parent["rounds"]).issubset(set(rounds)):
             raise LabError("继续训练必须保留父模型已经使用的所有审核轮次。")
-    if not dry_run:
+    if not dry_run and target == "local":
         YOLO = load_yolo()
     dataset, snapshot = build_dataset(project, name, list(rounds))
     params = {"epochs": epochs, "imgsz": imgsz, "batch": batch, "device": device,
@@ -67,9 +74,14 @@ def train(project, name, rounds=(), init="scratch", from_model=None, model_yaml=
               "counts": snapshot["counts"], "status": "planned", "created_at": now(), "versions": versions()}
     if from_model:
         record["parent_weights_sha256"] = parent["weights_sha256"]
+    if server:
+        record["execution"] = {"target": "server", "server_id": server_id, "host": server["host"], "device": device}
     if dry_run:
         write_json(project.root / "reports" / f"{name}_plan.json", record)
         return record
+    if server:
+        from .remote import train_remote
+        return train_remote(project, root, dataset, snapshot, record, server, parent_weights if from_model else None)
     root.mkdir(parents=True)
     record["status"] = "running"
     write_json(root / "model.json", record)

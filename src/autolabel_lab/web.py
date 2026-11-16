@@ -26,6 +26,7 @@ import psutil
 from .project import DEFAULT_MODEL_YAML, LabError, Project, now, read_json, safe_name, write_json
 from .reports import status
 from .annotation import read_annotation, save_annotation
+from .remote import public_servers, server_config, probe_server
 
 STATIC = Path(__file__).parent / "static"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
@@ -79,7 +80,8 @@ def command_args(action, payload):
         "split": {"seed_count": "--seed-count", "val_fraction": "--val-fraction", "test_fraction": "--test-fraction", "gap_seconds": "--gap-seconds"},
         "import-yolo": {"source": "--source", "train_count": "--train-count", "val_count": "--val-count", "pool_count": "--pool-count", "test_count": "--test-count"},
         "import-labels": {"subset": "--subset", "round": "--round", "source": "--from", "reviewed": "--reviewed"},
-        "train": {"name": "--name", "rounds": "--rounds", "init": "--init", "from_model": "--from-model", "epochs": "--epochs", "imgsz": "--imgsz", "batch": "--batch", "device": "--device", "dry_run": "--dry-run"},
+        "train": {"name": "--name", "rounds": "--rounds", "init": "--init", "from_model": "--from-model", "epochs": "--epochs", "imgsz": "--imgsz", "batch": "--batch", "device": "--device", "dry_run": "--dry-run", "target": "--target", "server_id": "--server-id", "workspace": "--workspace"},
+        "recover-remote": {"name": "--name", "workspace": "--workspace"},
         "autolabel": {"round": "--round", "model": "--model", "count": "--count", "conf": "--conf", "device": "--device"},
         "evaluate": {"models": "--models", "device": "--device"},
         "time": {"stage": "--stage", "seconds": "--seconds", "round": "--round", "note": "--note"},
@@ -118,6 +120,7 @@ class Workspace:
         self.jobs = {}
         self.processes = {}
         self.started_at = time.time()
+        self.server_inventory = {}
         for path in (self.state_dir / "jobs").glob("*/job.json"):
             job = read_json(path)
             self.jobs[job["id"]] = job
@@ -237,7 +240,7 @@ class Workspace:
             self.reconcile_jobs()
             jobs = [dict(job) for job in self.jobs.values()]
         return {"app": "autolabel-lab", "workspace": str(self.root), "projects": projects, "jobs": jobs, "runtime": packages,
-                "default_model": DEFAULT_MODEL_YAML}
+                "default_model": DEFAULT_MODEL_YAML, "servers": public_servers(self.root), "server_inventory": self.server_inventory}
 
     def details(self, project_id):
         p = self.project(project_id)
@@ -274,6 +277,11 @@ class Workspace:
 
     def start_job(self, project_id, action, payload):
         p = self.project(project_id)
+        payload = dict(payload)
+        if "workspace" in payload:
+            raise LabError("工作台路径由服务端指定。")
+        if action == "recover-remote" or (action == "train" and payload.get("target") == "server"):
+            payload["workspace"] = str(self.root)
         args = command_args(action, payload)
         with self.guard:
             self.reconcile_jobs()
@@ -282,6 +290,13 @@ class Workspace:
                 raise LabError("已有任务正在执行，请等它完成后再启动下一项操作。")
             if (p.root / ".operation.lock").exists():
                 raise LabError("实验已有其他任务在运行。异常中断留下的锁需确认无进程后手动移除。")
+            if action != "recover-remote":
+                for entry in self.state["projects"]:
+                    for path in (Path(entry["path"]) / "models").glob("*/remote.json"):
+                        if read_json(path).get("phase") in {"launching", "running"}:
+                            record_path = path.parent / "model.json"
+                            if record_path.exists() and read_json(record_path).get("status") in {"running", "remote_disconnected"}:
+                                raise LabError("有尚未结束的远程训练；请先恢复远程任务，避免重复占用 GPU。")
             job_id = uuid.uuid4().hex
             job = {"id": job_id, "project_id": project_id, "action": action, "payload": payload,
                    "status": "queued", "created_at": now(), "error": None, "worker_token": secrets.token_urlsafe(24)}
@@ -330,7 +345,7 @@ class Workspace:
             job = self.jobs.get(job_id)
             if not job or job["status"] not in {"queued", "running", "cancelling", "recovering"}:
                 raise LabError("此任务已结束。")
-            if job["action"] not in {"train", "extract", "autolabel", "evaluate"}:
+            if job["action"] not in {"train", "recover-remote", "extract", "autolabel", "evaluate"}:
                 raise LabError("此操作正在提交数据，请等待提交完成。")
             (self.state_dir / "jobs" / job_id / "cancel").touch()
             job["status"] = "cancelling"
@@ -453,6 +468,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(result)
             if path == "/api/cancel":
                 return self.send(ws.cancel_job(body["id"]))
+            if path == "/api/server-probe":
+                config = server_config(ws.root, body["server_id"])
+                try:
+                    inventory = probe_server(config)
+                except (LabError, ValueError) as exc:
+                    inventory = {"ready": False, "error": str(exc)}
+                ws.server_inventory[config["id"]] = {**inventory, "checked_at": now()}
+                return self.send(ws.server_inventory[config["id"]])
             if path == "/api/pick":
                 if body["kind"] not in {"video", "directory"}:
                     raise LabError("不支持的文件选择。")
